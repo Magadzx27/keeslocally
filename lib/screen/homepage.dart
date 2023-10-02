@@ -21,53 +21,41 @@ class Keespage extends StatefulWidget {
 class _KeespageState extends State<Keespage> {
   int _selectedIndex = 0;
 
-  @override
   void _onNavItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
   }
 
+  @override
   Widget build(BuildContext context) {
-    final List<Widget> _screens = [
-      mainPage(),
-      const newMemberPage(),
-    ];
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('كيس'),
       ),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: Color(0xFF110F1A),
-        onDestinationSelected: (int index) {
-          setState(() {
-            _selectedIndex = index;
-            _onNavItemTapped;
-          });
-        },
-        selectedIndex: _selectedIndex,
-        indicatorColor: const Color.fromARGB(255, 255, 255, 255),
-        destinations: const [
-          NavigationDestination(
-            selectedIcon: Icon(Icons.home),
-            icon: Icon(
-              Icons.home_outlined,
-              color: Colors.lightBlueAccent,
-            ),
-            label: 'Home',
+      bottomNavigationBar: BottomNavigationBar(
+        selectedItemColor: Colors.white,
+        backgroundColor: Color.fromARGB(255, 1, 78, 70),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'كيس',
           ),
-          NavigationDestination(
-            selectedIcon: Icon(Icons.group_add),
-            icon: Icon(
-              Icons.group_add_outlined,
-              color: Colors.lightBlueAccent,
-            ),
-            label: 'Add Member',
+          BottomNavigationBarItem(
+            icon: Icon(Icons.balance),
+            label: 'القوانين',
           ),
         ],
+        currentIndex: _selectedIndex,
+        onTap: _onNavItemTapped,
       ),
-      body: _screens[_selectedIndex],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          mainPage(),
+          const NewMemberPage(),
+        ],
+      ),
     );
   }
 }

@@ -1,32 +1,77 @@
+// ignore: file_names
+// ignore: file_names
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
+import 'package:kees/TopKees.dart';
+import 'package:kees/reusable_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../constants.dart';
+
+class AppState extends ChangeNotifier {
+  String selectedSackCount = '';
+
+  void setSelectedSackCount(String sackCount) {
+    selectedSackCount = sackCount;
+    notifyListeners();
+  }
+}
 
 class LieEntry {
   late String name;
   List<String> dates = [];
+  List<String> lieTopsList = [];
   List<String> lieDetailsList = [];
+  String selectedSackCount = '';
 
-  LieEntry({required this.name});
+  LieEntry({
+    required this.name,
+  });
   Map<String, dynamic> toJson() {
     return {
       'name': name,
       'dates': dates,
       'lieDetailsList': lieDetailsList,
+      'lieTopsList': lieTopsList,
+      'selectedSackCount': selectedSackCount
     };
   }
 
   factory LieEntry.fromJson(Map<String, dynamic> json) {
-    final name = json['name'];
-    final dates = List<String>.from(json['dates']);
-    final lieDetailsList = List<String>.from(json['lieDetailsList']);
+    final name =
+        json['name'] ?? ''; // Provide a default empty string if 'name' is null
+    final dates = List<String>.from(json['dates'] ?? []);
+    final lieDetailsList = List<String>.from(json['lieDetailsList'] ?? []);
+    final lieTopsList = List<String>.from(json['lieTopsList'] ?? []);
+    final selectedSackCount = json['selectedSackCount'] ?? '';
+
     return LieEntry(name: name)
+      ..selectedSackCount = selectedSackCount
       ..dates = dates
+      ..lieTopsList = lieTopsList
       ..lieDetailsList = lieDetailsList;
   }
-  int numberofLiesInMonth(int year, int month) {
+
+  void addLie(String date, String lieDetails, String lieTopList) {
+    dates.add(date);
+    lieTopsList.add(lieTopList);
+    lieDetailsList.add(lieDetails);
+  }
+
+  void removeLastLie() {
+    if (dates.isNotEmpty) {
+      dates.removeLast();
+      lieTopsList.removeLast();
+      lieDetailsList.removeLast();
+    }
+  }
+
+  int get numberOfLies {
+    return dates.length;
+  }
+
+  int numberOfLiesInMonth(int year, int month) {
     int count = 0;
     for (int i = 0; i < dates.length; i++) {
       DateTime lieDate = DateTime.parse(dates[i]);
@@ -36,36 +81,17 @@ class LieEntry {
     }
     return count;
   }
-
-  void addLie(String date, String lieDetails) {
-    dates.add(date);
-    lieDetailsList.add(lieDetails);
-  }
-
-  void removeLastLie() {
-    if (dates.isNotEmpty) {
-      dates.removeLast();
-      lieDetailsList.removeLast();
-    }
-  }
-
-  int get numberOfLies {
-    return dates.length;
-  }
 }
 
 class LieEntryStorage {
   static const String _lieEntriesKey = 'lie_entries';
-
-  // Store lie entries as JSON strings in shared preferences
-  static Future<void> saveLieEntries(List<LieEntry> entries) async {
+  void saveLieEntries(List<LieEntry> entries) async {
     final prefs = await SharedPreferences.getInstance();
     final entriesJson = entries.map((entry) => entry.toJson()).toList();
     await prefs.setStringList(
         _lieEntriesKey, entriesJson.map((e) => jsonEncode(e)).toList());
   }
 
-  // Retrieve lie entries from shared preferences and convert them to objects
   static Future<List<LieEntry>> loadLieEntries() async {
     final prefs = await SharedPreferences.getInstance();
     final entriesJson = prefs.getStringList(_lieEntriesKey) ?? [];
@@ -75,6 +101,7 @@ class LieEntryStorage {
   }
 }
 
+// ignore: camel_case_types
 class mainPage extends StatefulWidget {
   const mainPage({super.key});
 
@@ -83,33 +110,29 @@ class mainPage extends StatefulWidget {
 }
 
 class _mainPageState extends State<mainPage> {
+  final LieEntryStorage lieEntryStorage = LieEntryStorage();
+  List<Map<String, dynamic>> lawsWithSackCounts = [];
   List<LieEntry> lieEntries = [];
-  bool showTopLiars = false; // Flag to control when to show the top liars
-
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   TextEditingController nameController = TextEditingController();
   TextEditingController lieDetailsController = TextEditingController();
-  List<LieEntry> findTop3LiarsForMonth(int year, int month) {
-    List<LieEntry> topLiars = List.from(lieEntries);
+  TextEditingController lieTopListController = TextEditingController();
+  TextEditingController selectedLawController = TextEditingController();
 
-    topLiars.sort((a, b) {
-      int aCount = a.numberofLiesInMonth(year, month);
-      int bCount = b.numberofLiesInMonth(year, month);
-      return bCount.compareTo(aCount);
-    });
+  List<LieEntry> topLiars = [];
 
-    return topLiars.take(3).toList();
-  }
-
-  void toggleTopLiars() {
-    setState(() {
-      showTopLiars = !showTopLiars;
-    });
+  double calculateTotalSackCount() {
+    double totalSackCount = 0.0;
+    for (var entry in lieEntries) {
+      double entrySackCount = double.tryParse(entry.selectedSackCount) ?? 0.0;
+      totalSackCount += entrySackCount;
+    }
+    return totalSackCount;
   }
 
   @override
   void initState() {
     super.initState();
-    // Call setState to initialize the widget with any existing data
     LieEntryStorage.loadLieEntries().then((entries) {
       setState(() {
         lieEntries = entries;
@@ -119,146 +142,9 @@ class _mainPageState extends State<mainPage> {
 
   @override
   void dispose() {
-    // Save lie entries to SharedPreferences when the widget is disposed
-    LieEntryStorage.saveLieEntries(lieEntries);
+    lieEntryStorage.saveLieEntries(lieEntries);
+
     super.dispose();
-  }
-
-  void displayTop3LiarsForCurrentMonth() {
-    DateTime now = DateTime.now();
-    int year = now.year;
-    int month = now.month;
-
-    List<LieEntry> topLiars = findTop3LiarsForMonth(year, month);
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Top 3 Liars for ${DateFormat('MMMM yyyy').format(now)}'),
-          content: Column(
-            children: topLiars.map((entry) {
-              return ListTile(
-                title: Text(entry.name),
-                subtitle: Text(
-                    'عدد الاكياس: ${entry.numberofLiesInMonth(year, month)}'),
-              );
-            }).toList(),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                LieEntryStorage.saveLieEntries(lieEntries);
-              },
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
-    LieEntryStorage.saveLieEntries(lieEntries);
-  }
-
-  Future<void> showInformationDialog(BuildContext context) async {
-    double screenWidth = MediaQuery.of(context).size.width;
-    double screenHeight = MediaQuery.of(context).size.height;
-    return await showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(builder: (context, setState) {
-          return AlertDialog(
-            backgroundColor: const Color.fromARGB(255, 181, 171, 171),
-            insetPadding: const EdgeInsets.all(10),
-            content: Row(children: [
-              SizedBox(
-                width: screenWidth * 0.6,
-                height: screenHeight * 0.5,
-                child: Form(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.max,
-                    children: [
-                      TextFormField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          hintText: 'اسم المكيس',
-                          hintStyle: TextStyle(color: Colors.black),
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-                      Expanded(
-                        child: TextFormField(
-                          controller: lieDetailsController,
-                          keyboardType: TextInputType.multiline,
-                          expands: true,
-                          maxLines: null,
-                          minLines: null,
-                          decoration: const InputDecoration(
-                            hintText: "عنوان الكيس",
-                            hintStyle: TextStyle(color: Colors.black),
-                            border: OutlineInputBorder(
-                              borderSide: BorderSide(width: 2),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            ]),
-            title: const Text(
-              'اضافه كيس جديد',
-              style: TextStyle(color: Colors.black),
-            ),
-            actions: [
-              TextButton(
-                child: const Text('الغاء'),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-              TextButton(
-                child: const Text('حفظ'),
-                onPressed: () {
-                  // Get the values from the text controllers
-                  String name = nameController.text;
-                  String lieDetails = lieDetailsController.text;
-                  String date = DateFormat('yyyy-MM-dd')
-                      .format(DateTime.now()); // Current date
-
-                  LieEntry? existingEntry;
-
-                  for (var entry in lieEntries) {
-                    if (entry.name == name) {
-                      existingEntry = entry;
-                      break;
-                    }
-                  }
-
-                  if (existingEntry != null) {
-                    existingEntry.addLie(date, lieDetails);
-                  } else {
-                    LieEntry newEntry = LieEntry(name: name);
-                    newEntry.addLie(date, lieDetails);
-                    lieEntries.add(newEntry);
-                  }
-
-                  // Clear the text controllers
-                  nameController.clear();
-                  lieDetailsController.clear();
-
-                  // Close the dialog
-                  Navigator.of(context).pop();
-                  setState(() {
-                    LieEntryStorage.saveLieEntries(lieEntries);
-                  });
-                },
-              ),
-            ],
-          );
-        });
-      },
-    );
   }
 
   void removeLastEntry(LieEntry entry) {
@@ -267,102 +153,263 @@ class _mainPageState extends State<mainPage> {
       lieEntries.remove(entry);
     }
     setState(() {
-      LieEntryStorage.saveLieEntries(lieEntries);
+      lieEntryStorage.saveLieEntries(lieEntries);
     });
   }
 
+//
   @override
   Widget build(BuildContext context) {
+    double totalSackCount = calculateTotalSackCount();
+    double screenWidth = MediaQuery.of(context).size.width;
+    double screenHeight = MediaQuery.of(context).size.height;
     return ListView(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 20, 10, 10),
-          child: SizedBox(
-            width: double.infinity,
-            child: Card(
-              color: const Color(0xFF110F1A),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16.0),
-              ),
-              elevation: 10,
-              child: Column(
+        Column(
+          children: [
+            ReusableCard(
+              kess: ': مجموع الاكياس',
+              total: totalSackCount,
+            ),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Stack(
                 children: [
-                  Container(
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black,
-                          Color.fromARGB(255, 243, 2, 155)
-                        ],
-                      ),
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(16.0),
-                        topRight: Radius.circular(16.0),
+                  Positioned.fill(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: <Color>[
+                            Color(0xFF019587),
+                            Color.fromARGB(255, 1, 128, 115),
+                            Color.fromARGB(255, 1, 108, 97),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  const Row(
-                    children: [
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(70, 10, 10, 10),
-                        child: Text(
-                          '20',
-                          style: TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(10, 10, 10, 10),
-                        child: Text(
-                          ': عدد الاكياس الشهريه',
-                          style: TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black,
-                          Color.fromARGB(255, 243, 2, 155)
-                        ],
-                      ),
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(16.0),
-                        topRight: Radius.circular(16.0),
-                      ),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Color(0xFF019587),
+                      padding: const EdgeInsets.all(16.0),
+                      textStyle: const TextStyle(fontSize: 20),
                     ),
+                    child: const Text(
+                      'اضافه كيس جديد',
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) {
+                          return StatefulBuilder(builder: (context, setState) {
+                            return SingleChildScrollView(
+                              child: AlertDialog(
+                                backgroundColor:
+                                    const Color.fromARGB(255, 181, 171, 171),
+                                insetPadding:
+                                    const EdgeInsets.fromLTRB(10, 10, 10, 1),
+                                content: Row(children: [
+                                  SizedBox(
+                                    width: screenWidth * 0.6,
+                                    height: screenHeight * 0.5,
+                                    child: Form(
+                                      key: _formKey,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.max,
+                                        children: [
+                                          TextFormField(
+                                            validator: (value) {
+                                              if (value == null ||
+                                                  value.isEmpty) {
+                                                return 'ادخل اسم المكيس';
+                                              }
+                                              return null;
+                                            },
+                                            controller: nameController,
+                                            textAlign: TextAlign.right,
+                                            decoration: const InputDecoration(
+                                              hintText: 'اسم المكيس',
+                                              hintStyle: TextStyle(
+                                                  color: Colors.black,
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 30),
+                                          TextFormField(
+                                            validator: (value) {
+                                              if (value == null ||
+                                                  value.isEmpty) {
+                                                return 'ادخل عنوان الكيس';
+                                              }
+                                              return null;
+                                            },
+                                            controller: lieTopListController,
+                                            keyboardType:
+                                                TextInputType.multiline,
+                                            textAlign: TextAlign.right,
+                                            decoration: const InputDecoration(
+                                              hintText: "عنوان الكيس",
+                                              hintStyle: TextStyle(
+                                                  color: Colors.black,
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 30),
+                                          TextFormField(
+                                            validator: (value) {
+                                              if (value == null ||
+                                                  value.isEmpty) {
+                                                return 'وووو كم كيس';
+                                              }
+                                              return null;
+                                            },
+                                            controller: selectedLawController,
+                                            keyboardType: TextInputType.number,
+                                            textAlign: TextAlign.right,
+                                            decoration: const InputDecoration(
+                                              hintText: "عدد الاكياس",
+                                              hintStyle: TextStyle(
+                                                  color: Colors.black,
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 30),
+                                          Expanded(
+                                            child: TextFormField(
+                                              validator: (value) {
+                                                if (value == null ||
+                                                    value.isEmpty) {
+                                                  return 'ادخل تفاصيل الكيس';
+                                                }
+                                                return null;
+                                              },
+                                              controller: lieDetailsController,
+                                              keyboardType:
+                                                  TextInputType.multiline,
+                                              textAlign: TextAlign.right,
+                                              decoration: const InputDecoration(
+                                                hintText: "تفاصيل الكيس",
+                                                hintStyle: TextStyle(
+                                                    color: Colors.black,
+                                                    fontWeight:
+                                                        FontWeight.bold),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                ]),
+                                title: const Text(
+                                  'اضافه كيس جديد',
+                                  style: TextStyle(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.bold),
+                                  textAlign: TextAlign.right,
+                                ),
+                                actions: [
+                                  TextButton(
+                                    child: const Text(
+                                      'الغاء',
+                                      textAlign: TextAlign.left,
+                                      style: TextStyle(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                    onPressed: () {
+                                      nameController.clear();
+                                      lieDetailsController.clear();
+                                      selectedLawController.clear();
+                                      lieTopListController.clear();
+                                      Navigator.of(context).pop();
+                                    },
+                                  ),
+                                  TextButton(
+                                    child: const Text(
+                                      'حفظ',
+                                      textAlign: TextAlign.left,
+                                      style: TextStyle(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                    onPressed: () async {
+                                      if (_formKey.currentState!.validate()) {
+                                        String name = nameController.text;
+                                        String lieDetails =
+                                            lieDetailsController.text;
+                                        String date = DateFormat('yyyy-MM-dd')
+                                            .format(DateTime.now());
+                                        String lieTopList =
+                                            lieTopListController.text;
+                                        String selectcount =
+                                            selectedLawController.text;
+                                        LieEntry? existingEntry;
+
+                                        for (var entry in lieEntries) {
+                                          if (entry.name == name) {
+                                            existingEntry = entry;
+                                            break;
+                                          }
+                                        }
+                                        if (existingEntry != null) {
+                                          double oldCount = double.tryParse(
+                                                  existingEntry
+                                                      .selectedSackCount) ??
+                                              0.0;
+                                          double newCount =
+                                              double.tryParse(selectcount) ??
+                                                  0.0;
+                                          double updatedCount =
+                                              oldCount + newCount;
+                                          existingEntry.addLie(
+                                              date, lieDetails, lieTopList);
+                                          existingEntry.selectedSackCount =
+                                              updatedCount
+                                                  .toString(); // Set the selected sack count for this specific LieEntry
+                                        } else {
+                                          LieEntry newEntry =
+                                              LieEntry(name: name);
+                                          newEntry.addLie(
+                                              date, lieDetails, lieTopList);
+                                          newEntry.selectedSackCount =
+                                              selectcount; // Set the selected sack count for this specific LieEntry
+                                          lieEntries.add(newEntry);
+                                        }
+
+                                        nameController.clear();
+                                        lieDetailsController.clear();
+                                        selectedLawController.clear();
+                                        lieTopListController.clear();
+                                        Navigator.of(context).pop();
+
+                                        setState(() {
+                                          lieEntryStorage
+                                              .saveLieEntries(lieEntries);
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          });
+                        },
+                      );
+                    },
                   ),
                 ],
-              ),
-            ),
-          ),
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextButton(
-              style: TextButton.styleFrom(
-                textStyle: const TextStyle(fontSize: 20),
-              ),
-              onPressed: () {
-                showInformationDialog(context);
-              },
-              child: const Text(
-                'اضافه كيس جديد',
-                style: TextStyle(color: Colors.black),
               ),
             )
           ],
         ),
+        const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
           child: Card(
-            color: Color.fromARGB(255, 193, 182, 182),
+            color: Color.fromARGB(255, 255, 255, 255),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10.0),
             ),
@@ -374,46 +421,25 @@ class _mainPageState extends State<mainPage> {
                 columns: const <DataColumn>[
                   DataColumn(
                     label: Expanded(
-                      child: Text(
-                        'التاريخ',
-                        style: TextStyle(
-                            color: Colors.black,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold),
-                      ),
+                      child: Text('التاريخ', style: kLabelTextStylehead),
                     ),
                   ),
                   DataColumn(
                     label: Expanded(
                       child: Text(
-                        'عدد الاكياس',
-                        style: TextStyle(
-                            color: Colors.black,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold),
+                        'عدد الأكياس',
+                        style: kLabelTextStylehead,
                       ),
                     ),
                   ),
                   DataColumn(
                     label: Expanded(
-                      child: Text(
-                        'عنوان الكيس',
-                        style: TextStyle(
-                            color: Colors.black,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold),
-                      ),
+                      child: Text('عنوان الكيس', style: kLabelTextStylehead),
                     ),
                   ),
                   DataColumn(
                     label: Expanded(
-                      child: Text(
-                        'الاسم',
-                        style: TextStyle(
-                            color: Colors.black,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold),
-                      ),
+                      child: Text('الاسم', style: kLabelTextStylehead),
                     ),
                   ),
                   DataColumn(
@@ -427,51 +453,142 @@ class _mainPageState extends State<mainPage> {
                     cells: <DataCell>[
                       DataCell(
                         Text(
-                          entry.dates.isNotEmpty
-                              ? entry.dates.last
-                              : 'لا يوجد كذبات مسجلة',
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                            entry.dates.isNotEmpty
+                                ? entry.dates.last
+                                : 'لا يوجد كذبات مسجلة',
+                            style: kLabelTextStylebody),
                       ),
                       DataCell(
-                        Text(
-                          entry.numberOfLies.toString(),
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 19,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          children: [
+                            Text(entry.selectedSackCount,
+                                style: kLabelTextStylebody),
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.black),
+                              onPressed: () {
+                                double subtractValue =
+                                    0.0; // Step 1: Initialize subtractValue
+                                showDialog(
+                                    context: context,
+                                    builder: (BuildContext context) {
+                                      return AlertDialog(
+                                        backgroundColor:
+                                            Color.fromARGB(255, 181, 171, 171),
+                                        title: Text('تعديل عدد الاكياس'),
+                                        content: TextFormField(
+                                          validator: (value) {
+                                            if (value == null ||
+                                                value.isEmpty) {
+                                              return 'رقم';
+                                            }
+                                            return null;
+                                          },
+                                          onChanged: (value) => {
+                                            subtractValue =
+                                                double.tryParse(value) ?? 0.0
+                                          },
+                                          controller: selectedLawController,
+                                          keyboardType: TextInputType.number,
+                                          textAlign: TextAlign.right,
+                                          decoration: const InputDecoration(
+                                            hintStyle: TextStyle(
+                                                color: Colors.black,
+                                                fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        actions: <Widget>[
+                                          TextButton(
+                                            style: TextButton.styleFrom(
+                                              textStyle: Theme.of(context)
+                                                  .textTheme
+                                                  .labelLarge,
+                                            ),
+                                            child: const Text('الغاء'),
+                                            onPressed: () {
+                                              Navigator.of(context).pop();
+                                            },
+                                          ),
+                                          TextButton(
+                                            style: TextButton.styleFrom(
+                                              textStyle: Theme.of(context)
+                                                  .textTheme
+                                                  .labelLarge,
+                                            ),
+                                            child: const Text('حفظ'),
+                                            onPressed: () {
+                                              if (subtractValue != 0) {
+                                                double currentCount =
+                                                    double.tryParse(entry
+                                                            .selectedSackCount) ??
+                                                        0.0;
+                                                double updatedCount =
+                                                    currentCount -
+                                                        subtractValue;
+                                                if (updatedCount < 0) {
+                                                  updatedCount == 0.0;
+                                                }
+                                                entry.selectedSackCount =
+                                                    updatedCount.toString();
+                                              }
+
+                                              // Save the updated lieEntries
+                                              lieEntryStorage
+                                                  .saveLieEntries(lieEntries);
+                                              selectedLawController.clear();
+                                              Navigator.of(context).pop();
+                                              setState(() {});
+                                            },
+                                          ),
+                                        ],
+                                      );
+                                    });
+                              },
+                            ),
+                          ],
                         ),
                       ),
-                      DataCell(
-                        Text(
-                          entry.lieDetailsList.isNotEmpty
-                              ? entry.lieDetailsList.last
-                              : 'لا يوجد كذبات مسجلة',
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 19,
-                            fontWeight: FontWeight.bold,
+                      DataCell(Row(
+                        children: [
+                          Text(
+                              entry.lieTopsList.isNotEmpty
+                                  ? entry.lieTopsList.last
+                                  : 'لا يوجد كذبات مسجلة',
+                              style: kLabelTextStylebody),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.arrow_drop_down_sharp,
+                              color: Colors.black,
+                            ),
+                            onPressed: () {
+                              showDialog(
+                                  context: context,
+                                  builder: (BuildContext context) {
+                                    return AlertDialog(
+                                      backgroundColor: const Color.fromARGB(
+                                          255, 181, 171, 171),
+                                      title: const Text('تفاصيل الكيس'),
+                                      content: Text(
+                                        entry.lieDetailsList.isNotEmpty
+                                            ? entry.lieDetailsList.last
+                                            : 'لا يوجد كذبات مسجلة',
+                                        style: const TextStyle(
+                                          color: Colors.black,
+                                          fontSize: 19,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    );
+                                  });
+                            },
                           ),
-                        ),
-                      ),
+                        ],
+                      )),
                       DataCell(
-                        Text(
-                          entry.name,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 19,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text(entry.name, style: kLabelTextStylebody),
                       ),
                       DataCell(
                         IconButton(
-                          icon: const Icon(Icons.delete),
+                          icon: const Icon(Icons.delete, color: Colors.black),
                           onPressed: () {
                             removeLastEntry(entry);
                           },
@@ -484,75 +601,10 @@ class _mainPageState extends State<mainPage> {
             ),
           ),
         ),
-        SizedBox(
+        const SizedBox(
           height: 10,
         ),
-        ElevatedButton(
-          onPressed: toggleTopLiars,
-          child: Text(
-            showTopLiars ? "جاري التحليل" : "عرض اكثر المكيسين",
-            style: const TextStyle(
-              color: Color.fromARGB(255, 253, 253, 253),
-              fontSize: 19,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        if (showTopLiars)
-          FutureBuilder(
-            // Simulate a delay to show the top liars after a week
-            future: Future.delayed(const Duration(seconds: 5), () => true),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                // Show a loading indicator while waiting
-                return const CircularProgressIndicator();
-              } else if (snapshot.hasError) {
-                // Handle errors if needed
-                return Text("Error: ${snapshot.error}");
-              } else {
-                // Show the top liars when the week ends
-                DateTime now = DateTime.now();
-                int year = now.year;
-                int month = now.month;
-                List<LieEntry> topLiars = findTop3LiarsForMonth(year, month);
-
-                return Column(
-                  children: [
-                    Text(
-                      '${DateFormat('MMMM yyyy').format(now)} : اكثر المكيسين',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Column(
-                      children: topLiars.map((entry) {
-                        return ListTile(
-                          title: Text(
-                            entry.name,
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontSize: 19,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          subtitle: Text(
-                            'عدد الاكياس: ${entry.numberofLiesInMonth(year, month)}',
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontSize: 19,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                );
-              }
-            },
-          ),
+        TopKees(lieEntries: lieEntries),
       ],
     );
   }

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 // ignore: must_be_immutable
-class ReusableCard extends StatelessWidget {
+class TopReusableCard extends StatelessWidget {
   final String kess;
   double total = 0.0;
 
-  ReusableCard({
+  TopReusableCard({
     Key? key,
     required this.kess,
     required this.total,
@@ -14,7 +14,7 @@ class ReusableCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 30),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       child: SizedBox(
         width: double.infinity,
         child: Card(
@@ -31,12 +31,12 @@ class ReusableCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Padding(
-                      padding: EdgeInsets.fromLTRB(35, 1, 10, 1),
+                      padding: EdgeInsets.fromLTRB(50, 1, 10, 1),
                       child: Text(
                         textAlign: TextAlign.center,
                         total.toString(),
                         style: const TextStyle(
-                          fontSize: 24,
+                          fontSize: 20,
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
@@ -48,13 +48,12 @@ class ReusableCard extends StatelessWidget {
                         textAlign: TextAlign.center,
                         kess,
                         style: const TextStyle(
-                          fontSize: 24,
+                          fontSize: 20,
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
                   ],
                 ),
               ),
